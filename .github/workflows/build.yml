@@ -34,6 +34,14 @@ jobs:
             /usr/local/bin/protoc-gen-grpc-swift
           protoc-gen-grpc-swift --version | grep -F '1.23.1'
 
+          # idb's `build.sh` pipes xcodebuild through `xcpretty` whenever it is
+          # on PATH, and xcpretty no longer parses modern xcodebuild output: a
+          # failed build reports `** BUILD FAILED **` with every `error:` line
+          # swallowed, which is exactly what the first run of this workflow
+          # produced. The runner is ephemeral and nothing else here wants a
+          # pretty printer, so the shim is removed to keep raw diagnostics.
+          sudo rm -f "$(command -v xcpretty || true)"
+
       - name: Report the toolchain this build actually used
         shell: bash
         run: |
