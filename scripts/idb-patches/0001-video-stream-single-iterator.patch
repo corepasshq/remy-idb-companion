@@ -1,0 +1,65 @@
+--- a/Companion/SwiftServer/MethodHandlers/VideoStreamMethodHandler.swift
++++ b/Companion/SwiftServer/MethodHandlers/VideoStreamMethodHandler.swift
+@@ -34,7 +34,11 @@
+   func handle(requestStream: GRPCAsyncRequestStream<Idb_VideoStreamRequest>, responseStream: GRPCAsyncResponseStreamWriter<Idb_VideoStreamResponse>, context: GRPCAsyncServerCallContext) async throws {
+     @Atomic var finished = false
+ 
+-    guard case let .start(start) = try await requestStream.requiredNext.control
++    // grpc-swift traps if a second AsyncIterator is created; read every
++    // request frame through one owned iterator.
++    let stream = SingleIteratorRequestStream(requestStream)
++
++    guard case let .start(start) = try await stream.requiredNext.control
+     else { throw GRPCStatus(code: .failedPrecondition, message: "Expected start control") }
+ 
+     let videoStream = try await startVideoStream(
+@@ -43,7 +47,7 @@
+       finished: _finished)
+ 
+     let observeClientCancelStreaming = Task<Void, Error> {
+-      for try await request in requestStream {
++      while let request = try await stream.next() {
+         switch request.control {
+         case .start:
+           throw GRPCStatus(code: .failedPrecondition, message: "Video streaming already started")
+--- /dev/null
++++ b/Companion/Utility/SingleIteratorRequestStream.swift
+@@ -0,0 +1,38 @@
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ *
++ * This source code is licensed under the MIT license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++/// Owns the single `AsyncIterator` of a gRPC request stream.
++///
++/// grpc-swift's `GRPCAsyncRequestStream` is backed by
++/// `NIOThrowingAsyncSequenceProducer`, which fatal-errors if more than one
++/// iterator is ever created from it. `AsyncSequence.requiredNext` reads via
++/// `first(where:)`, and every `first(where:)` makes a *new* iterator — so any
++/// handler that reads more than one request frame straight off the stream
++/// (`requestStream.requiredNext` twice) crashes the whole companion on the
++/// second read. Wrapping the stream once and reading every frame through this
++/// type keeps all reads on one iterator.
++final class SingleIteratorRequestStream<S: AsyncSequence>: @unchecked Sendable {
++  private var iterator: S.AsyncIterator
++
++  init(_ sequence: S) {
++    self.iterator = sequence.makeAsyncIterator()
++  }
++
++  func next() async throws -> S.Element? {
++    try await iterator.next()
++  }
++
++  /// The next element, treating end-of-stream as a precondition failure.
++  var requiredNext: S.Element {
++    get async throws {
++      guard let next = try await next() else {
++        throw StreamReadError<S.Element>.nextElementNotProduced
++      }
++      return next
++    }
++  }
++}

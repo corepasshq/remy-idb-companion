@@ -1,0 +1,26 @@
+{
+  "name": "idb-v1.5.1-remy.1",
+  "upstream": {
+    "repository": "facebook/idb",
+    "tag": "v1.5.1",
+    "commit": "abebb8c68d577f295614c046f10e670a9b09d2e8",
+    "sourceArchiveSha256": "d7034e4fbae0e238bb4d8bec5bbb3e3c1bb83b4e05533e09d0d5733d30c87c94"
+  },
+  "patches": [
+    "idb-patches/0001-video-stream-single-iterator.patch",
+    "idb-patches/0002-jpeg-without-low-latency-rate-control.patch"
+  ],
+  "toolchain": {
+    "xcodeMinimum": "26.0",
+    "xcodegen": "2.46.0",
+    "protoc": "36.0",
+    "protocGenSwift": "1.38.1",
+    "protocGenGrpcSwift": "1.23.1"
+  },
+  "asset": {
+    "repository": "corepasshq/remy-idb-companion",
+    "tag": "idb-v1.5.1-remy.1",
+    "name": "idb-companion.macos-arm64.tar.gz",
+    "sha256": "REPLACE_AFTER_HELPER_CI_RELEASE"
+  }
+}
