@@ -12,6 +12,18 @@ const manifest = JSON.parse(
 const proxy = process.env.REMY_HELPER_BUILD_PROXY?.trim();
 const env = {
   ...process.env,
+  // idb's `build.sh` generates each xcodeproj into a `mktemp -d` directory and
+  // then rewrites the paths XcodeGen wrote there back to project-relative ones,
+  // so it can copy the result in without xattrs. That rewrite matches on the
+  // project's ABSOLUTE path, which assumes the source tree is not itself under
+  // `$TMPDIR` -- and ours is, because this script unpacks upstream into
+  // `mkdtemp(os.tmpdir())`. XcodeGen then emits a short `../<scratch>/source/…`
+  // instead, the sed matches nothing, and the copied project resolves one level
+  // too high: `Unable to open base configuration reference file
+  // …/<scratch>/<scratch>/source/Configuration/Shared.xcconfig`, which fails the
+  // very first target. The workaround exists for filesystems with no xattr
+  // support (EdenFS); APFS has them, so upstream's own opt-out is the fix.
+  XCODEGEN_STRIP_XATTRS: 'false',
   ...(proxy
     ? {
         HTTPS_PROXY: proxy,
