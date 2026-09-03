@@ -13,7 +13,7 @@
   "toolchain": {
     "xcodeMinimum": "26.0",
     "xcodegen": "2.46.0",
-    "protoc": "36.0",
+    "protoc": "35.1",
     "protocGenSwift": "1.38.1",
     "protocGenGrpcSwift": "1.23.1"
   },

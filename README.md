@@ -38,6 +38,10 @@ means anything if those bytes are permanent — so a new patch set bumps `name`
 and `asset.tag` (`…-remy.1` → `…-remy.2`) and leaves the old release in place
 for the Remy versions still pinning it.
 
+The `asset.sha256` field in this repository's copy of the manifest is not
+maintained -- nothing here reads it, and the build cannot know its own output's
+digest before producing it. It is Remy's copy that carries the real one.
+
 After a release, its digest goes into Remy's own manifest. Until then that field
 reads `REPLACE_AFTER_HELPER_CI_RELEASE`, and Remy's iOS panel is simply
 view-only.
