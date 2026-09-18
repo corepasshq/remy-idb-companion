@@ -1,5 +1,5 @@
 {
-  "name": "idb-v1.5.1-remy.1",
+  "name": "idb-v1.5.1-remy.2",
   "upstream": {
     "repository": "facebook/idb",
     "tag": "v1.5.1",
@@ -19,7 +19,7 @@
   },
   "assets": {
     "repository": "corepasshq/remy-idb-companion",
-    "tag": "idb-v1.5.1-remy.1",
+    "tag": "idb-v1.5.1-remy.2",
     "arm64": {
       "name": "idb-companion.macos-arm64.tar.gz",
       "sha256": "REPLACE_AFTER_HELPER_CI_RELEASE"
