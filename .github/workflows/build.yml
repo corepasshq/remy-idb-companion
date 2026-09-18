@@ -54,36 +54,60 @@ jobs:
           protoc --version
           protoc-gen-swift --version
 
-      - name: Build patched companion
-        run: node scripts/build-patched-idb-companion.mjs build/idb-patched
+      # arm64 is native on this runner; x86_64 is a cross-compile (idb's own
+      # build.sh hardcodes ARCHS=arm64 -- build-patched-idb-companion.mjs
+      # patches that one line per target). Both run on the SAME arm64 runner:
+      # there is no separate x64 runner to provision or pay for.
+      - name: Build patched companion (arm64 + x64)
+        run: |
+          set -euo pipefail
+          node scripts/build-patched-idb-companion.mjs build/idb-patched-arm64 arm64
+          node scripts/build-patched-idb-companion.mjs build/idb-patched-x64 x64
 
       - name: Verify and pack
         shell: bash
         run: |
           set -euo pipefail
-          test -x build/idb-patched/idb_companion
-          # `test` does not glob, so `= *arm64*` would compare against a
-          # literal asterisk string and could never pass.
-          file build/idb-patched/idb_companion | grep -q 'arm64'
-          build/idb-patched/idb_companion --version
-          codesign --verify --verbose=4 build/idb-patched/idb_companion
-          # Pack the binary BY NAME, never `-C dir .`: that form emits `./`,
-          # `./idb_companion` and `./manifest.json`, and the consumer
-          # (Remy's `desktop/scripts/fetch-idb-companion.mjs`, `WANTED`)
-          # refuses an archive carrying any member it did not ask for.
-          tar czf idb-companion.macos-arm64.tar.gz -C build/idb-patched idb_companion
-          shasum -a 256 idb-companion.macos-arm64.tar.gz \
-            > idb-companion.macos-arm64.tar.gz.sha256
-          echo "--- paste this digest into Remy's idb-patched-manifest.json"
-          cat idb-companion.macos-arm64.tar.gz.sha256
+          # No associative arrays: macOS's system `bash` is 3.2 and this
+          # workflow does not get to assume Homebrew's bash is on PATH first.
+          for arch in arm64 x64; do
+            case "$arch" in
+              arm64) file_arch=arm64 ;;
+              x64)   file_arch=x86_64 ;;
+            esac
+            bin="build/idb-patched-$arch/idb_companion"
+            test -x "$bin"
+            # `test` does not glob, so `= *arm64*` would compare against a
+            # literal asterisk string and could never pass.
+            file "$bin" | grep -q "$file_arch"
+            # x86_64 has no implicit linker signature; codesign --verify would
+            # fail on it before the ad-hoc sign this script's build step adds.
+            codesign --verify --verbose=4 "$bin"
+            # `idb_companion --version` on the x86_64 binary runs under
+            # Rosetta on this arm64 runner -- a real smoke test, not just a
+            # `file`/`codesign` check, but not proof of Simulator-facing
+            # behavior on real Intel hardware.
+            "$bin" --version
+            # Pack the binary BY NAME, never `-C dir .`: that form emits `./`,
+            # `./idb_companion` and `./manifest.json`, and the consumer
+            # (Remy's `desktop/scripts/fetch-idb-companion.mjs`, `WANTED`)
+            # refuses an archive carrying any member it did not ask for.
+            asset="idb-companion.macos-$arch.tar.gz"
+            tar czf "$asset" -C "build/idb-patched-$arch" idb_companion
+            shasum -a 256 "$asset" > "$asset.sha256"
+          done
+          echo "--- paste these digests into Remy's idb-patched-manifest.json"
+          cat idb-companion.macos-arm64.tar.gz.sha256 idb-companion.macos-x64.tar.gz.sha256
 
       # Kept for a push-triggered build, which verifies but does not publish.
       - uses: actions/upload-artifact@v6
         with:
-          name: idb-companion-macos-arm64
+          name: idb-companion-macos
           path: |
             idb-companion.macos-arm64.tar.gz
             idb-companion.macos-arm64.tar.gz.sha256
+            idb-companion.macos-x64.tar.gz
+            idb-companion.macos-x64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -97,18 +121,20 @@ jobs:
         run: |
           set -euo pipefail
           # The tag is read from the manifest rather than written twice: the
-          # consumer pins `asset.tag`, so the manifest is the only authority.
-          tag="$(node -p "require('./scripts/idb-patched-manifest.json').asset.tag")"
+          # consumer pins `assets.tag`, so the manifest is the only authority.
+          tag="$(node -p "require('./scripts/idb-patched-manifest.json').assets.tag")"
           upstream="$(node -p "require('./scripts/idb-patched-manifest.json').upstream.tag")"
-          # A published tag is immutable on purpose: Remy pins the archive's
+          # A published tag is immutable on purpose: Remy pins each archive's
           # sha256, which only means anything if the bytes never change. To ship
-          # a new patch set, bump `name` and `asset.tag` in the manifest.
+          # a new patch set, bump `name` and `assets.tag` in the manifest.
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag already exists; bump asset.tag in the manifest" >&2
+            echo "release $tag already exists; bump assets.tag in the manifest" >&2
             exit 1
           fi
           gh release create "$tag" \
             idb-companion.macos-arm64.tar.gz \
             idb-companion.macos-arm64.tar.gz.sha256 \
+            idb-companion.macos-x64.tar.gz \
+            idb-companion.macos-x64.tar.gz.sha256 \
             --title "$tag" \
-            --notes "Patched facebook/idb $upstream companion for Remy's iOS simulator panel, macOS arm64. Built by .github/workflows/build.yml from the patches in scripts/idb-patches/."
+            --notes "Patched facebook/idb $upstream companion for Remy's iOS simulator panel, macOS arm64 + x64 (x64 cross-compiled on the arm64 runner; idb's own build.sh normally hardcodes ARCHS=arm64). Built by .github/workflows/build.yml from the patches in scripts/idb-patches/."
