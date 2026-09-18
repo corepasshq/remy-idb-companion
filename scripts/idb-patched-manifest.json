@@ -17,10 +17,16 @@
     "protocGenSwift": "1.38.1",
     "protocGenGrpcSwift": "1.23.1"
   },
-  "asset": {
+  "assets": {
     "repository": "corepasshq/remy-idb-companion",
     "tag": "idb-v1.5.1-remy.1",
-    "name": "idb-companion.macos-arm64.tar.gz",
-    "sha256": "REPLACE_AFTER_HELPER_CI_RELEASE"
+    "arm64": {
+      "name": "idb-companion.macos-arm64.tar.gz",
+      "sha256": "REPLACE_AFTER_HELPER_CI_RELEASE"
+    },
+    "x64": {
+      "name": "idb-companion.macos-x64.tar.gz",
+      "sha256": "REPLACE_AFTER_HELPER_CI_RELEASE"
+    }
   }
 }

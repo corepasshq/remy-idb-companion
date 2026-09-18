@@ -46,9 +46,23 @@ function download(url, target, cwd) {
   run('curl', ['-L', '--fail', '--retry', '3', '-o', target, url], cwd);
 }
 
+// idb's own `build.sh` hardcodes `ARCHS=arm64` in `invoke_xcodebuild()` (its
+// comment: "build arm64 only (no Intel/x86_64 slices)"). That line, not a
+// missing upstream x64 build, is what makes this arm64-only: an arm64 host's
+// Xcode can cross-compile x86_64 once that one line is patched. This is the
+// map from the arch this script accepts to the ARCHS value xcodebuild wants.
+const XCODEBUILD_ARCHS = { arm64: 'arm64', x64: 'x86_64' };
+
 async function main() {
-  if (process.platform !== 'darwin' || process.arch !== 'arm64') {
-    throw new Error('patched idb companion must be built on macOS arm64');
+  if (process.platform !== 'darwin') {
+    throw new Error('patched idb companion must be built on macOS');
+  }
+  const targetArch = process.argv[3] ?? process.arch;
+  const xcodebuildArch = XCODEBUILD_ARCHS[targetArch];
+  if (!xcodebuildArch) {
+    throw new Error(
+      `unsupported target arch ${targetArch}; expected one of ${Object.keys(XCODEBUILD_ARCHS).join(', ')}`,
+    );
   }
   const output = path.resolve(process.argv[2] ?? 'build/idb-patched');
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'remy-idb-source-'));
@@ -68,6 +82,22 @@ async function main() {
     for (const relative of manifest.patches) {
       run('patch', ['-p1', '-i', path.join(scriptsDir, relative)], source);
     }
+
+    // Loosen upstream's hardcoded `ARCHS=arm64` to the target this run wants.
+    // A no-op when targetArch is arm64; the only other value in
+    // XCODEBUILD_ARCHS is x86_64.
+    const buildScript = path.join(source, 'build.sh');
+    const buildScriptSource = fs.readFileSync(buildScript, 'utf8');
+    const archsSetting = 'ARCHS=arm64';
+    if (!buildScriptSource.includes(archsSetting)) {
+      throw new Error(
+        `idb's build.sh no longer contains '${archsSetting}'; the cross-arch patch needs updating`,
+      );
+    }
+    fs.writeFileSync(
+      buildScript,
+      buildScriptSource.replaceAll(archsSetting, `ARCHS=${xcodebuildArch}`),
+    );
 
     // Build dependencies are intentionally provisioned by the helper CI and
     // fixed in the manifest. Building them inside every Remy release is slow,
@@ -150,11 +180,28 @@ async function main() {
     ]);
     fs.chmodSync(path.join(output, 'idb_companion'), 0o755);
 
+    // arm64 Mach-O executables get an implicit linker-applied ad-hoc signature
+    // on this toolchain; x86_64 ones do not, and idb's build.sh never calls
+    // codesign itself. An unsigned binary still runs locally (this script's
+    // own `--help` smoke test does not need one), but the helper CI verifies
+    // with `codesign --verify`, and Remy's packaging re-signs everything with
+    // the app's real identity anyway -- so an explicit ad-hoc signature here
+    // just makes the intermediate artifact consistent across both arches.
+    if (xcodebuildArch !== 'arm64') {
+      run('codesign', [
+        '--force',
+        '--sign',
+        '-',
+        path.join(output, 'idb_companion'),
+      ]);
+    }
+
     fs.writeFileSync(
       path.join(output, 'manifest.json'),
       JSON.stringify(
         {
           ...manifest,
+          arch: targetArch,
           builtBinarySha256: sha256(path.join(output, 'idb_companion')),
         },
         null,
